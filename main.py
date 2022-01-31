@@ -12,138 +12,44 @@ from tensorflow.keras import layers, losses
 print(tf.__version__)
 
 
-url = "https://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz"
+# First download the data into the directory we want it under ./data
+base_dir = os.path.dirname(os.path.realpath(__file__))
+url = "https://storage.googleapis.com/download.tensorflow.org/data/stack_overflow_16k.tar.gz"
 
-cache_dir = "./data"
+cache_dir = os.path.join(base_dir, "data")
+data_path = os.path.join(cache_dir, "stack_overflow_16k")
+if not os.path.exists(data_path):
+    try:
+        os.mkdir(data_path)
+    except Exception as err:
+        print(err)
 
-if not os.listdir(cache_dir):
-    dataset = tf.keras.utils.get_file("aclImdb_v1", url, untar=True, cache_dir=cache_dir, cache_subdir='')
-
-dataset_dir = os.path.join(cache_dir, 'aclImdb')
-train_dir = os.path.join(dataset_dir, "train")
-test_dir = os.path.join(dataset_dir, 'test')
-# Lets read one for fun
-sample_file = os.path.join(train_dir, 'pos/11_9.txt')
-with open(sample_file) as f:
-    print(f.read())
-
-# Now we need to remove the data directories we are not interested in, in this case the unsup reviews.
-remove_dir = os.path.join(train_dir, 'unsup')
-if os.path.lexists(remove_dir):
-    shutil.rmtree(remove_dir)
-
-# Next we are going to split up the training dataset in order to have a training set and a validation set as we
-# arleady have atest set from this data
+dataset = tf.keras.utils.get_file("stack_overflow_16k", url, untar=True, cache_dir=data_path, cache_subdir='')
+train_dir = os.path.join(data_path, "train")
+test_dir = os.path.join(data_path, "test")
 
 batch_size = 32
-seed = 42
+seed = 56
+
+# Now we need to build a training and validation set using the same method as the text classification,
 
 raw_train_ds = tf.keras.utils.text_dataset_from_directory(
     train_dir,
     batch_size=batch_size,
-    validation_split=0.2,
-    subset='training',
+    validation_split = 0.25,
+    subset="training",
     seed=seed
 )
 
-# Now that we have it stored in tf.data we can iterate through it.
-for text_batch, label_batch in raw_train_ds.take(1):
-    for i in range(3):
-        print("Review: ", text_batch.numpy()[i])
-        print("Label: ", label_batch.numpy()[i])
-
-print("Label 0 corresponds to", raw_train_ds.class_names[0])
-print("Label 1 corresponds to", raw_train_ds.class_names[1])
-
-# Now we are going to take the remaining documents and create the validation dataset. And the test dataset.
 raw_val_ds = tf.keras.utils.text_dataset_from_directory(
     train_dir,
     batch_size=batch_size,
-    validation_split=0.2,
-    subset='validation',
-    seed=seed )
-
-raw_test_ds = tf.keras.utils.text_dataset_from_directory(
-    test_dir,
-    batch_size=batch_size )
-
-# Now we build a function to strip the HTML and punctuation from the input data.
-def custom_standardization(input_data):
-    lowercase = tf.strings.lower(input_data)
-    stripped_html = tf.strings.regex_replace(lowercase, '<br />', ' ')
-    return tf.strings.regex_replace(stripped_html, '[%s]' % re.escape(string.punctuation), '')
-
-# Now we are goign to create the TextVectorization layer which will standardize, tokenize, and vectorize the data for the NN.
-max_features = 10000
-sequence_lenght = 250
-
-vectorize_layer = layers.TextVectorization(
-    standardize=custom_standardization,
-    max_tokens=max_features,
-    output_mode='int',
-    output_sequence_length=sequence_lenght )
-
-# Make a text-only dataset (without labels), then call adapt.
-train_text = raw_train_ds.map(lambda x, y: x)
-vectorize_layer.adapt(train_text)
-
-# Now lets visualize some data.
-def vectorize_text(text, label):
-    text = tf.expand_dims(text, -1)
-    return vectorize_layer(text), label
-
-# Grab a batch of 32 reviews and labels from the dataset
-view_tb, view_lb = next(iter(raw_train_ds))
-first_review, first_label = view_tb[0], view_lb[0]
-print("Review: ", first_review)
-print("Label", raw_train_ds.class_names[first_label])
-print("Vectorized review", vectorize_text(first_review, first_label))
-
-# We can look at what the vocabularay is for each of the above vectorized ints.
-print("85 ---> ",vectorize_layer.get_vocabulary()[85])
-print("17 ---> ",vectorize_layer.get_vocabulary()[17])
-print("260 ---> ",vectorize_layer.get_vocabulary()[260])
-print("2 ---> ",vectorize_layer.get_vocabulary()[2])
-print('Vocabulary size: {}'.format(len(vectorize_layer.get_vocabulary())))
-
-# Now lets apply the same textvectorization layer we created
-train_ds = raw_train_ds.map(vectorize_text)
-val_ds = raw_val_ds.map(vectorize_text)
-test_ds = raw_test_ds.map(vectorize_text)
-
-# Now configure the datasets for performance. We can cache them in memory to ensure loading the dataset is not the
-# bottle neck of training it. We will use prefetch to overlap data processing and model execution while training.
-AUTOTUNE = tf.data.AUTOTUNE
-train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-val_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
-test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-# Now to create the model for the Neural Network
-embedding_dim = 16
-model = tf.keras.Sequential([
-    layers.Embedding(max_features + 1, embedding_dim),
-    layers.Dropout(0.2),
-    layers.GlobalAveragePooling1D(),
-    layers.Dropout(0.2),
-    layers.Dense(1)])
-
-model.summary()
-
-# Loss function and optimization - This is a binary classification problem so we will need a loss function and optimizer.
-model.compile(loss=losses.BinaryCrossentropy(from_logits=True),
-              optimizer='adam',
-              metrics=tf.metrics.BinaryAccuracy(threshold=0.0))
-
-# Now we train the model
-epochs = 10
-history = model.fit(
-    train_ds,
-    validation_data=val_ds,
-    epochs=epochs
+    validation_split= 0.25,
+    subset="validation",
+    seed=seed
 )
 
-# Eval the model
-
-loss, accuracy = model.evaluate(test_ds)
-print("Loss: ", loss)
-print("Accuracy: ", accuracy)
+for text, label in raw_train_ds.take(1):
+    for i in range(10):
+        print(f"Question: {text.numpy()[i]}")
+        print(f"Classification: {raw_train_ds.class_names[label.numpy()[i]]}")
