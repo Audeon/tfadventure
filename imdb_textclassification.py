@@ -117,7 +117,7 @@ test_ds = raw_test_ds.map(vectorize_text)
 # bottle neck of training it. We will use prefetch to overlap data processing and model execution while training.
 AUTOTUNE = tf.data.AUTOTUNE
 train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-val_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
 # Now to create the model for the Neural Network
